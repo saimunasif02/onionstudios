@@ -74,6 +74,17 @@ footer{padding:30px 4%;color:var(--dim);font-size:13px;text-align:center}
 @keyframes sw{to{transform:translateX(110%)}}
 @keyframes wm{0%{opacity:0;transform:scale(.7);letter-spacing:-.06em;filter:blur(14px)}25%{opacity:1;filter:blur(0);text-shadow:0 0 30px var(--acc)}100%{opacity:1;transform:scale(1.2);letter-spacing:.1em;text-shadow:0 0 60px var(--acc)}}
 @media(prefers-reduced-motion:reduce){#intro{display:none}}
+.hero-wrap{position:relative;min-height:68vh}
+.hero{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity .8s}
+.hero.on{opacity:1;pointer-events:auto}
+.dots{position:absolute;left:4%;bottom:22px;display:flex;gap:8px;z-index:3}
+.dots button{width:28px;height:4px;border:0;border-radius:2px;background:#ffffff55;cursor:pointer;padding:0}
+.dots button.on{background:var(--acc)}
+.eps{margin:18px 0}.eps h2{font-size:19px;margin-bottom:10px}
+.ep{display:flex;gap:14px;align-items:center;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+.ep.on{border-color:var(--acc)}.ep b{font-size:20px;color:var(--dim);width:28px}
+.epn{font-size:16px;color:var(--dim);font-weight:400}
+.eprow{display:grid;grid-template-columns:24px 1fr 1.6fr 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
 @media(max-width:560px){.two{grid-template-columns:1fr}.card{width:120px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -88,7 +99,7 @@ import { upload } from 'https://esm.sh/@vercel/blob@0.27.0/client';
 const $ = s => document.querySelector(s), app = $('#app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const DEF = { name:'ONION STUDIOS', accent:'#e8436f', tag:'© Onion Studios. Shob adhikar songrokkhito.', order:'' };
-let items = [], S = { ...DEF }, pw = sessionStorage.getItem('onion-pw') || '', editing = null, tab = 'videos', curFiles = [];
+let items = [], S = { ...DEF }, pw = sessionStorage.getItem('onion-pw') || '', editing = null, tab = 'videos', curFiles = [], curEps = [], busy = 0, heroTimer, heroN = 0, curWatch = '';
 
 const poster = (t, a, b) => {
   const w = t.split(' '), y0 = 540 - (w.length - 1) * 50;
@@ -110,7 +121,7 @@ const demo = () => {
     ['Car For A Grand','WhatCarCanYouGetForAGrand','Auto and Travel','2013','#14b8a6','#042f2e','Kom taka-y kon gari paowa jay?'],
     ['GTI Review','VolkswagenGTIReview','Auto and Travel','2013','#6366f1','#1e1b4b','Volkswagen GTI-er shohoj review.']
   ];
-  return m.map((x, n) => ({ id:'demo' + n, title:x[0], video:B + x[1] + '.mp4', cat:x[2], year:x[3], poster:poster(x[0], x[4], x[5]), desc:x[6], duration:'', rating:'', featured:n === 0, hidden:false, files:[] }));
+  return m.map((x, n) => ({ id:'demo' + n, title:x[0], video:B + x[1] + '.mp4', cat:x[2], year:x[3], poster:poster(x[0], x[4], x[5]), desc:x[6], duration:'', rating:'', featured:n < 3, hidden:false, files:[] }));
 };
 
 async function load() {
@@ -134,7 +145,7 @@ const playerHTML = u => ytId(u)
   : `<video src="${esc(u)}" controls autoplay playsinline></video>`;
 const card = i => `<div class="card" tabindex="0" role="link" data-id="${i.id}" style="background-image:url('${esc(i.poster)}')"><span>${esc(i.title)}</span></div>`;
 const vis = () => items.filter(i => !i.hidden);
-const metaOf = i => [i.year, i.rating, i.duration, i.cat].filter(Boolean).map(esc).join('  |  ');
+const metaOf = i => [i.year, i.rating, i.duration, i.cat, (i.episodes || []).length ? i.episodes.length + ' episodes' : ''].filter(Boolean).map(esc).join('  |  ');
 
 function skin() {
   document.title = S.name;
@@ -143,29 +154,51 @@ function skin() {
   $('#ft').textContent = S.tag;
   document.documentElement.style.setProperty('--acc', S.accent);
 }
+function showHero(i) {
+  const hs = document.querySelectorAll('.hero'), ds = document.querySelectorAll('.dots button');
+  if (!hs.length) return clearInterval(heroTimer);
+  heroN = (i + hs.length) % hs.length;
+  hs.forEach((h, n) => h.classList.toggle('on', n === heroN));
+  ds.forEach((d, n) => d.classList.toggle('on', n === heroN));
+}
+function armHero() {
+  clearInterval(heroTimer);
+  if (document.querySelectorAll('.hero').length > 1) heroTimer = setInterval(() => showHero(heroN + 1), 6000);
+}
 function home() {
   const v = vis();
   if (!v.length) return app.innerHTML = `<div class="empty"><h2>Kono video nei</h2><p>Admin panel (#/admin) theke prothom video add korun.</p></div>`;
-  const h = v.find(i => i.featured) || v[0];
+  const hs = v.filter(i => i.featured), heroes = hs.length ? hs : [v[0]];
   const cats = [...new Set(v.map(i => i.cat || 'Notun'))];
   const ord = S.order.split(',').map(s => s.trim()).filter(Boolean);
   cats.sort((a, b) => (ord.indexOf(a) + 1 || 999) - (ord.indexOf(b) + 1 || 999));
-  app.innerHTML = `<section class="hero" style="background-image:url('${esc(h.poster)}')"><div><h1>${esc(h.title)}</h1><div class="meta">${metaOf(h)}</div><p>${esc(h.desc)}</p><button class="btn" data-id="${h.id}">▶ Dekhun</button></div></section>` +
+  app.innerHTML = `<section class="hero-wrap">${heroes.map((h, n) => `<div class="hero${n ? '' : ' on'}" style="background-image:url('${esc(h.banner || h.poster)}')"><div><h1>${esc(h.title)}</h1><div class="meta">${metaOf(h)}</div><p>${esc(h.desc)}</p><button class="btn" data-id="${h.id}">▶ Dekhun</button></div></div>`).join('')}${heroes.length > 1 ? `<div class="dots">${heroes.map((_, n) => `<button data-dot="${n}" class="${n ? '' : 'on'}" aria-label="Slide ${n + 1}"></button>`).join('')}</div>` : ''}</section>` +
     cats.map(c => `<section class="row"><h2>${esc(c)}</h2><div class="scroll">${v.filter(i => (i.cat || 'Notun') === c).map(card).join('')}</div></section>`).join('');
+  heroN = 0; armHero();
 }
 function search(t) {
   const r = vis().filter(i => (i.title + i.cat).toLowerCase().includes(t.toLowerCase()));
   app.innerHTML = r.length ? `<div class="grid">${r.map(card).join('')}</div>` : `<div class="empty">Kichu pawa jayni</div>`;
 }
-function watch(id) {
+function watch(id, ep = 0) {
   const i = items.find(x => x.id === id); if (!i) return home();
-  app.innerHTML = `<div class="watch"><div class="stage">${playerHTML(i.video)}</div><h1>${esc(i.title)}</h1><div class="meta">${metaOf(i)}</div><p>${esc(i.desc)}</p>` +
+  curWatch = id;
+  const eps = i.episodes || [], cur = eps.length ? (eps[ep] || eps[0]) : null, src = cur ? cur.video : i.video;
+  app.innerHTML = `<div class="watch"><div class="stage">${playerHTML(src)}</div><h1>${esc(i.title)}${cur ? ` <small class="epn">${esc(cur.title || 'Episode ' + (ep + 1))}</small>` : ''}</h1><div class="meta">${metaOf(i)}</div><p>${esc(i.desc)}</p>` +
+    (eps.length ? `<div class="eps"><h2>Episodes</h2>${eps.map((e, n) => `<button class="ep${n === ep ? ' on' : ''}" data-ep="${n}"><b>${n + 1}</b><span>${esc(e.title || 'Episode ' + (n + 1))}</span></button>`).join('')}</div>` : '') +
     ((i.files || []).length ? `<div class="files"><p class="meta">Extra files</p>${i.files.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener" download>${esc(f.name)}</a>`).join('')}</div>` : '') +
     `</div><section class="row"><h2>Aro dekhun</h2><div class="scroll">${vis().filter(x => x.id !== id).map(card).join('')}</div></section>`;
+  const vid = $('.stage video');
+  if (vid) {
+    vid.onended = () => { if (ep + 1 < eps.length) watch(id, ep + 1); };
+    if (/\.m3u8/.test(src) && !vid.canPlayType('application/vnd.apple.mpegurl'))
+      import('https://cdn.jsdelivr.net/npm/hls.js@1.5.17/+esm').then(m => { const h = new m.default(); h.loadSource(src); h.attachMedia(vid); });
+  }
   scrollTo(0, 0);
 }
 
 const chips = () => curFiles.map((f, n) => `<button type="button" class="chip" data-rf="${n}">${esc(f.name)} ✕</button>`).join('');
+const epsHTML = () => curEps.map((e, n) => `<div class="eprow"><b>${n + 1}</b><input data-ei="${n}" data-k="title" value="${esc(e.title)}" placeholder="Episode nam"><input data-ei="${n}" data-k="video" value="${esc(e.video)}" placeholder="Video URL ba upload"><input type="file" data-ef="${n}"><button type="button" class="btn alt" data-erm="${n}" aria-label="Episode muchhun">✕</button></div>`).join('');
 function vids() {
   const e = editing ? items.find(i => i.id === editing) : {};
   const f = (k, l, t = 'text') => `<label>${l}<input id="f-${k}" type="${t}" value="${esc(e[k])}"></label>`;
@@ -173,12 +206,13 @@ function vids() {
   return `<h2>${editing ? 'Edit korun' : 'Notun video add korun'}</h2>
   <form id="form">${f('title', 'Title')}<label>Description<textarea id="f-desc" rows="3">${esc(e.desc)}</textarea></label>
   <div class="two">${f('year', 'Year')}${f('cat', 'Category (jemon Movies, Series)')}${f('duration', 'Duration (jemon 1h 45m)')}${f('rating', 'Rating (jemon U, 13+, 18+)')}</div>
-  ${up('poster', 'Poster image (upload ba URL)')}${up('video', 'Video (mp4 upload, mp4 link, ba YouTube link)')}
+  ${up('poster', 'Poster image (2:3, jemon 600x900, upload ba URL)')}${up('banner', 'Hero banner (optional, 16:9, jemon 1920x1080)')}${up('video', 'Video (movie hole eta din, series hole faka rakhun)')}
+  <p class="msg">Episodes (series-er jonno, optional)</p><div id="eps">${epsHTML()}</div><div><button type="button" class="btn alt" data-eadd>+ Episode add korun</button></div>
   <label>Extra files (subtitle, PDF, etc.)<input type="file" id="xf" multiple></label><div id="xl">${chips()}</div>
-  <label class="chk"><input type="checkbox" id="f-featured" ${e.featured ? 'checked' : ''}> Home page hero te dekhan</label>
+  <label class="chk"><input type="checkbox" id="f-featured" ${e.featured ? 'checked' : ''}> Home page hero slider e dekhan (ekadhik video tick korle slide hobe)</label>
   <label class="chk"><input type="checkbox" id="f-hidden" ${e.hidden ? 'checked' : ''}> Lukiye rakhun (draft, public e dekha jabe na)</label>
   <div><button class="btn" type="submit">${editing ? 'Update' : 'Publish'}</button> ${editing ? '<button class="btn alt" type="button" id="cn">Cancel</button>' : ''}</div><p class="msg" id="st"></p></form>
-  <h2>Shob video (${items.length})</h2>${items.map(i => `<div class="item"><img src="${esc(i.poster)}" alt=""><b>${esc(i.title)}${i.hidden ? '<span class="tag">draft</span>' : ''}${i.featured ? '<span class="tag">hero</span>' : ''}<small>${esc(i.cat)}</small></b><button class="btn alt" data-mv="${i.id}:-1" aria-label="Upore">↑</button><button class="btn alt" data-mv="${i.id}:1" aria-label="Niche">↓</button><button class="btn alt" data-ed="${i.id}">Edit</button><button class="btn alt" data-del="${i.id}">Delete</button></div>`).join('')}`;
+  <h2>Shob video (${items.length})</h2>${items.map(i => `<div class="item"><img src="${esc(i.poster)}" alt=""><b>${esc(i.title)}${i.hidden ? '<span class="tag">draft</span>' : ''}${i.featured ? '<span class="tag">hero</span>' : ''}${(i.episodes || []).length ? '<span class="tag">' + i.episodes.length + ' ep</span>' : ''}<small>${esc(i.cat)}</small></b><button class="btn alt" data-mv="${i.id}:-1" aria-label="Upore">↑</button><button class="btn alt" data-mv="${i.id}:1" aria-label="Niche">↓</button><button class="btn alt" data-ed="${i.id}">Edit</button><button class="btn alt" data-del="${i.id}">Delete</button></div>`).join('')}`;
 }
 function sets() {
   return `<h2>Site settings</h2><form id="sform">
@@ -206,46 +240,56 @@ const commit = async ok => { try { msg('Save hocche…'); await save(); skin(); 
 
 document.addEventListener('change', async e => {
   const el = e.target;
+  busy++;
   try {
     if (el.id === 'xf') { for (const file of el.files) { msg(file.name + ' upload hocche…'); const b = await up(file); curFiles.push({ name:file.name, url:b.url }); } $('#xl').innerHTML = chips(); msg('Upload shesh'); }
+    else if (el.dataset.ef !== undefined) { const file = el.files[0]; if (!file) return; const n = +el.dataset.ef; const b = await up(file, p => msg(file.name + ' ' + Math.round(p.percentage) + '%')); curEps[n].video = b.url; if (!curEps[n].title) curEps[n].title = file.name.replace(/\.[^.]+$/, ''); $('#eps').innerHTML = epsHTML(); msg('Upload shesh'); }
     else if (el.dataset.for) { const file = el.files[0]; if (!file) return; const b = await up(file, p => msg(file.name + ' ' + Math.round(p.percentage) + '%')); $('#f-' + el.dataset.for).value = b.url; msg('Upload shesh'); }
     else if (el.id === 'imp') {
       const d = JSON.parse(await el.files[0].text()), list = Array.isArray(d) ? d : d.items;
       if (!Array.isArray(list) || !confirm('Ekhon-kar shob data replace hobe. Cholbe?')) return;
       items = list; if (d.settings) S = { ...DEF, ...d.settings }; await commit('Restore hoyeche');
     }
-  } catch (er) { msg(er.message); }
+  } catch (er) { msg('Upload hoyni: ' + er.message); alert('Upload hoyni: ' + er.message); }
+  finally { busy--; }
 });
+document.addEventListener('input', e => { const el = e.target; if (el.dataset.ei !== undefined) curEps[+el.dataset.ei][el.dataset.k] = el.value; });
 document.addEventListener('submit', async e => {
   e.preventDefault();
   if (e.target.id === 'sform') { S = { name:$('#s-name').value.trim() || DEF.name, accent:$('#s-accent').value, order:$('#s-order').value, tag:$('#s-tag').value }; return commit('Settings save hoyeche'); }
   if (e.target.id !== 'form') return;
+  if (busy) return msg('Upload cholche, shesh hoyar jonno opekkha korun…');
   const v = k => $('#f-' + k).value.trim();
-  if (!v('title') || !v('video') || !v('poster')) return msg('Title, poster ar video lagbe');
-  const it = { id:editing || Date.now().toString(36), title:v('title'), desc:v('desc'), year:v('year'), cat:v('cat'), duration:v('duration'), rating:v('rating'), poster:v('poster'), video:v('video'), featured:$('#f-featured').checked, hidden:$('#f-hidden').checked, files:[...curFiles] };
-  if (it.featured) items.forEach(i => i.featured = false);
+  const eps = curEps.filter(x => x.video.trim()).map(x => ({ title:x.title.trim(), video:x.video.trim() }));
+  if (!v('title') || !v('poster') || (!v('video') && !eps.length)) return msg('Title, poster ar video (ba kompokkhe ekta episode) lagbe');
+  const it = { id:editing || Date.now().toString(36), title:v('title'), desc:v('desc'), year:v('year'), cat:v('cat'), duration:v('duration'), rating:v('rating'), poster:v('poster'), banner:v('banner'), video:v('video'), episodes:eps, featured:$('#f-featured').checked, hidden:$('#f-hidden').checked, files:[...curFiles] };
   editing ? items[items.findIndex(i => i.id === editing)] = it : items.unshift(it);
-  editing = null; curFiles = []; await commit('Published');
+  editing = null; curFiles = []; curEps = []; await commit('Published');
 });
 document.addEventListener('click', async e => {
   const t = e.target, c = t.closest('[data-id]');
   if (t.id === 'go') { pw = $('#pw').value; try { await post({ verify:true }); sessionStorage.setItem('onion-pw', pw); admin(); } catch (er) { pw = ''; $('#lm').textContent = er.message; } }
   else if (t.id === 'lo') { pw = ''; sessionStorage.removeItem('onion-pw'); admin(); }
-  else if (t.id === 'cn') { editing = null; curFiles = []; admin(); }
+  else if (t.id === 'cn') { editing = null; curFiles = []; curEps = []; admin(); }
   else if (t.dataset.tab) { tab = t.dataset.tab; admin(); }
   else if (t.dataset.rf) { curFiles.splice(+t.dataset.rf, 1); $('#xl').innerHTML = chips(); }
-  else if (t.dataset.ed) { editing = t.dataset.ed; curFiles = [...(items.find(i => i.id === editing).files || [])]; admin(); scrollTo(0, 0); }
+  else if (t.dataset.ed) { editing = t.dataset.ed; const it0 = items.find(i => i.id === editing); curFiles = [...(it0.files || [])]; curEps = (it0.episodes || []).map(x => ({ ...x })); admin(); scrollTo(0, 0); }
   else if (t.dataset.mv) { const [id, d] = t.dataset.mv.split(':'), n = items.findIndex(i => i.id === id), m = n + +d; if (m < 0 || m >= items.length) return; [items[n], items[m]] = [items[m], items[n]]; await commit(''); }
   else if (t.dataset.del && confirm('Delete korben?')) { items = items.filter(i => i.id !== t.dataset.del); await commit('Deleted'); }
   else if (t.id === 'rs') { S = { ...DEF }; await commit('Default e ferot gelo'); }
   else if (t.id === 'dl') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ settings:S, items }, null, 2)], { type:'application/json' })); a.download = 'onion-backup.json'; a.click(); }
   else if (t.id === 'dm' && confirm('Ekhon-kar shob muchhe demo content boshbe. Cholbe?')) { items = demo(); await commit('Demo load hoyeche'); }
   else if (t.id === 'clr' && confirm('Shob video muchhe jabe. Nishchit?')) { items = []; await commit('Shob muchha hoyeche'); }
+  else if (t.dataset.eadd !== undefined) { curEps.push({ title:'', video:'' }); $('#eps').innerHTML = epsHTML(); }
+  else if (t.dataset.erm !== undefined) { curEps.splice(+t.dataset.erm, 1); $('#eps').innerHTML = epsHTML(); }
+  else if (t.closest('[data-ep]')) watch(curWatch, +t.closest('[data-ep]').dataset.ep);
+  else if (t.closest('[data-dot]')) { showHero(+t.closest('[data-dot]').dataset.dot); armHero(); }
   else if (c) location.hash = '#/watch/' + c.dataset.id;
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('card')) location.hash = '#/watch/' + e.target.dataset.id; });
 $('#q').addEventListener('input', e => e.target.value ? search(e.target.value) : route());
 function route() {
+  clearInterval(heroTimer);
   skin();
   const h = location.hash;
   h.startsWith('#/watch/') ? watch(h.slice(8)) : h === '#/admin' ? admin() : home();
